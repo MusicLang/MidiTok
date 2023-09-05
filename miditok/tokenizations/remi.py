@@ -92,12 +92,18 @@ class REMI(MIDITokenizer):
         ticks_per_bar = self._compute_ticks_per_bar(
             TimeSignature(*current_time_sig, 0), time_division
         )
+        last_time_sig_changes = {} # {time: index in all_events}
         for e, event in enumerate(events):
             if event.type == "TimeSig":
                 current_time_sig = list(map(int, event.value.split("/")))
                 ticks_per_bar = self._compute_ticks_per_bar(
                     TimeSignature(*current_time_sig, event.time), time_division
                 )
+                # Look for a time signature change with the same time and replace it
+                last_time_sig_change = last_time_sig_changes.get(event.time)
+                if last_time_sig_change is not None:
+                    all_events[last_time_sig_change].value = f"{current_time_sig[0]}/{current_time_sig[1]}"
+
             if event.time != previous_tick:
                 # (Rest)
                 if (
@@ -143,6 +149,8 @@ class REMI(MIDITokenizer):
                                 desc=0,
                             )
                         )
+                        last_time_sig_changes[(current_bar + i + 1) * ticks_per_bar] = len(all_events) - 1
+
                 current_bar += nb_new_bars
 
                 # Position
@@ -303,11 +311,10 @@ class REMI(MIDITokenizer):
                     num, den = self._parse_token_time_signature(tok_val)
                     if (
                         num != time_signature_changes[-1].numerator
-                        and den != time_signature_changes[-1].denominator
+                        or den != time_signature_changes[-1].denominator
                     ):
                         time_sig = TimeSignature(num, den, current_tick)
-                        if si == 0:
-                            time_signature_changes.append(time_sig)
+                        time_signature_changes.append(time_sig)
                         ticks_per_bar = self._compute_ticks_per_bar(
                             time_sig, time_division
                         )
@@ -344,6 +351,7 @@ class REMI(MIDITokenizer):
                     instruments[current_program].pitch_bends.append(
                         PitchBend(int(tok_val), current_tick)
                     )
+
         if len(tempo_changes) > 1:
             del tempo_changes[0]  # delete mocked tempo change
         tempo_changes[0].time = 0
